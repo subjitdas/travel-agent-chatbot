@@ -22,6 +22,7 @@ const {
 const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 
 const busCard = require('../resources/BusCard.json');
+const { defaultPipeName } = require("botbuilder/lib/streaming");
 
 const CHOICE_PROMPT = 'CHOICE_PROMPT';
 const CONFIRM_PROMPT = 'CONFIRM_PROMPT';
@@ -153,18 +154,41 @@ class BusDialog extends CancelAndHelpDialog {
     async summaryStep(step) {
         if(step.result) {
 
-            //get the seat numbers and update in the database about booked seats on that date
+            //updating remaining seats in the database
+            const remainingSeats = step.values.seats - step.values.passengers;
+            let query3 = `update bus set available_seats=${remainingSeats} where `;
+            query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+            query3 += `and (bus_name='${step.values.busName}' and bus_date='${step.values.journeyDate}') and bus_time='${step.values.time}'`;
+            await pool.execute(query3);
 
-            //insert the ticket info in ticket table
+            //getting the seat numbers
+            let seatNumbers = '';
+            for(let i=0; i<step.values.passengers; i++) {
+                if(i === step.values.passengers-1) {
+                    seatNumbers += step.values.seats;
+                }
+                else {
+                    seatNumbers += step.values.seats-- + ',';
+                }
+            }
 
-            //get the ticket id from ticket table
-            
             const bus = step.values;
-            bus.seats = '21,22.23';
-            bus.id = '1000';
-    
+            bus.seats = seatNumbers;
+            
+            //inserting ticket info into database
+            let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
+            query4 += `values('${bus.from}', '${bus.to}', 'BUS', '${bus.busName}', '${bus.time}', '${bus.journeyDate}', '${bus.seats}')`
+            await pool.execute(query4);
+
+            //getting ticket id
+            let query5 = `select id from tickets where `;
+            query5 += `(from_city='${bus.from}' and to_city='${bus.to}') `;
+            query5 += `and (transport_mode='BUS' and transport_name='${bus.busName}') and (travel_time='${bus.time}' and travel_date='${bus.journeyDate}')`;
+            const data = await pool.execute(query5);
+            bus.id = data[0][0].id;
+
             //Returning Adaptive card of user info
-            busCard.body[2].columns[1].items[0].text = bus.id;
+            busCard.body[2].columns[1].items[0].text = bus.id.toString();
             busCard.body[3].columns[1].items[0].text = bus.from;
             busCard.body[4].columns[1].items[0].text = bus.to;
             busCard.body[5].columns[1].items[0].text = bus.passengers.toString();
