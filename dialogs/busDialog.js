@@ -111,7 +111,7 @@ class BusDialog extends CancelAndHelpDialog {
         
         let array = [];
 
-        //check availability and put the available buses in array using sql
+        //checking availability of buses and providing the user with options
         const query1 = `select * from bus where (from_city='${step.values.from}' and to_city='${step.values.to}') and (bus_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
         const data = await pool.execute(query1);
         for(let i=0; i<data[0].length; i++) {

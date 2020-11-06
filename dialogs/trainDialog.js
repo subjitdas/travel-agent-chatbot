@@ -3,6 +3,8 @@
 
 const dateValidator = require("DateValidator").DateValidator;
 
+const pool = require('../database');
+
 const { CardFactory } = require('botbuilder');
 const {
     AttachmentPrompt,
@@ -109,10 +111,20 @@ class TrainDialog extends CancelAndHelpDialog {
 
     async trainSelectStep(step) {
         step.values.journeyDate = step.result;
-
-        //check availability and put the available traines in array using sql
         
-        const array = ['a', 'b'];
+        const array = [];
+
+        //checking availability of trains and providing the user with options
+        const query1 = `select * from train where (from_city='${step.values.from}' and to_city='${step.values.to}') and (train_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
+        const data = await pool.execute(query1);
+        for(let i=0; i<data[0].length; i++) {
+            const trainInfo = data[0][i].train_name + " at " + data[0][i].train_time;
+            array.push(trainInfo);
+        }
+        if (array.length <= 0) {
+            await step.context.sendActivity('Unfortunately no trains are available based on your requirements. Please try a different mode of transport or a different date.');
+            return await step.replaceDialog('root');
+        }
         return await step.prompt(CHOICE_PROMPT, {
             prompt: 'Select the train and timing based on your preference',
             choices: ChoiceFactory.toChoices(array)
@@ -120,12 +132,15 @@ class TrainDialog extends CancelAndHelpDialog {
     }
     
     async confirmStep(step) {
-        step.values.trainName = step.result.value;
+        step.values.trainName = step.result.value.split(' at ')[0];
+        step.values.time = step.result.value.split(' at ')[1];
         
-        //get values on the basis of user's choice
-        step.values.trainName = 'TATA train';
-        step.values.trainNumber = 'OD1234';
-        step.values.time = '5:00 PM';
+        let query2 = `select coach_number, available_seats from train where `;
+        query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+        query2 += `and (train_name='${step.values.trainName}' and train_date='${step.values.journeyDate}') and train_time='${step.values.time}'`;
+        const data = await pool.execute(query2);
+        step.values.trainNumber = data[0][0].coach_number;
+        step.values.seats = data[0][0].available_seats;
 
         const train = step.values;
 
@@ -133,7 +148,7 @@ class TrainDialog extends CancelAndHelpDialog {
         msg += `, your destination is ${train.to}`;
         msg += `, number of passenger(s) is/are ${ train.passengers }`;
         msg += `, date of journey is ${ train.journeyDate}`
-        msg += ` and the train you have chosen is ${ train.trainName }.`;
+        msg += ` and the train you have chosen is ${ train.trainName } at ${train.time}.`;
         await step.context.sendActivity(msg);
 
         return await step.prompt(CONFIRM_PROMPT, 'Do you wish to book ticket?', ['yes', 'no']);
@@ -142,18 +157,41 @@ class TrainDialog extends CancelAndHelpDialog {
     async summaryStep(step) {
         if(step.result) {
 
-            //get the seat numbers and update in the database about booked seats on that date
+            //updating remaining seats in the database
+            const remainingSeats = step.values.seats - step.values.passengers;
+            let query3 = `update train set available_seats=${remainingSeats} where `;
+            query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+            query3 += `and (train_name='${step.values.trainName}' and train_date='${step.values.journeyDate}') and train_time='${step.values.time}'`;
+            await pool.execute(query3);
 
-            //insert the ticket info in ticket table
+            //getting the seat numbers
+            let seatNumbers = '';
+            for(let i=0; i<step.values.passengers; i++) {
+                if(i === step.values.passengers-1) {
+                    seatNumbers += step.values.seats;
+                }
+                else {
+                    seatNumbers += step.values.seats-- + ',';
+                }
+            }
 
-            //get the ticket id from ticket table
-            
             const train = step.values;
-            train.seats = '21,22.23';
-            train.id = '1000';
+            train.seats = seatNumbers;
+            
+            //inserting ticket info into database
+            let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
+            query4 += `values('${train.from}', '${train.to}', 'TRAIN', '${train.trainName}', '${train.time}', '${train.journeyDate}', '${train.seats}')`
+            await pool.execute(query4);
+
+            //getting ticket id
+            let query5 = `select id from tickets where `;
+            query5 += `(from_city='${train.from}' and to_city='${train.to}') `;
+            query5 += `and (transport_mode='TRAIN' and transport_name='${train.trainName}') and (travel_time='${train.time}' and travel_date='${train.journeyDate}')`;
+            const data = await pool.execute(query5);
+            train.id = data[0][0].id;
     
             //Returning Adaptive card of user info
-            trainCard.body[2].columns[1].items[0].text = train.id;
+            trainCard.body[2].columns[1].items[0].text = train.id.toString();
             trainCard.body[3].columns[1].items[0].text = train.from;
             trainCard.body[4].columns[1].items[0].text = train.to;
             trainCard.body[5].columns[1].items[0].text = train.passengers.toString();
