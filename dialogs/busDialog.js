@@ -3,6 +3,8 @@
 
 const dateValidator = require("DateValidator").DateValidator;
 
+const pool = require('../database');
+
 const { CardFactory } = require('botbuilder');
 const {
     AttachmentPrompt,
@@ -105,10 +107,20 @@ class BusDialog extends CancelAndHelpDialog {
 
     async busSelectStep(step) {
         step.values.journeyDate = step.result;
+        
+        let array = [];
 
         //check availability and put the available buses in array using sql
-        
-        const array = ['a', 'b'];
+        const query1 = `select * from bus where (from_city='${step.values.from}' and to_city='${step.values.to}') and (bus_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
+        const data = await pool.execute(query1);
+        for(let i=0; i<data[0].length; i++) {
+            const busInfo = data[0][i].bus_name + " at " + data[0][i].bus_time;
+            array.push(busInfo);
+        }
+        if (array.length <= 0) {
+            await step.context.sendActivity('Unfortunately no buses are available based on your requirements. Please try a different mode of transport or a different date.');
+            return await step.replaceDialog('root');
+        }
         return await step.prompt(CHOICE_PROMPT, {
             prompt: 'Select the bus and timing based on your preference',
             choices: ChoiceFactory.toChoices(array)
@@ -116,20 +128,23 @@ class BusDialog extends CancelAndHelpDialog {
     }
     
     async confirmStep(step) {
-        step.values.busName = step.result.value;
+        step.values.busName = step.result.value.split(' at ')[0];
+        step.values.time = step.result.value.split(' at ')[1];
         
-        //get values on the basis of user's choice
-        step.values.busName = 'TATA Bus'; //
-        step.values.busNumber = 'OD1234'; //
-        step.values.time = '3:00 PM';     //
-
+        let query2 = `select bus_number, available_seats from bus where `;
+        query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+        query2 += `and (bus_name='${step.values.busName}' and bus_date='${step.values.journeyDate}') and bus_time='${step.values.time}'`;
+        const data = await pool.execute(query2);
+        step.values.busNumber = data[0][0].bus_number;
+        step.values.seats = data[0][0].available_seats;
+        
         const bus = step.values;
 
         let msg = `your starting location is ${ bus.from }`;
         msg += `, your destination is ${bus.to}`;
         msg += `, number of passenger(s) is/are ${ bus.passengers }`;
         msg += `, date of journey is ${ bus.journeyDate}`
-        msg += ` and the bus you have chosen is ${ bus.busName }.`;
+        msg += ` and the bus you have chosen is ${ bus.busName } at ${bus.time}.`;
         await step.context.sendActivity(msg);
 
         return await step.prompt(CONFIRM_PROMPT, 'Do you wish to book ticket?', ['yes', 'no']);
