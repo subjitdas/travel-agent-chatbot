@@ -49,7 +49,6 @@ class BusDialog extends CancelAndHelpDialog {
             this.toStep.bind(this),
             this.passengersStep.bind(this),
             this.dateStep.bind(this),
-            // this.busType.bind(this),
             this.busSelectStep.bind(this),
             this.confirmStep.bind(this),
             this.summaryStep.bind(this)

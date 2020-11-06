@@ -51,7 +51,6 @@ class TrainDialog extends CancelAndHelpDialog {
             this.toStep.bind(this),
             this.passengersStep.bind(this),
             this.dateStep.bind(this),
-            // this.trainType.bind(this),
             this.trainSelectStep.bind(this),
             this.confirmStep.bind(this),
             this.summaryStep.bind(this)
@@ -239,13 +238,6 @@ class TrainDialog extends CancelAndHelpDialog {
         }
         return false;
     }
-
-    // async numberValidator(promptContext) {
-    //     if (promptContext.recognized.succeeded) {
-    //         const input = promptContext.recognized.value;
-    //         return (Number.isInteger(parseInt(input)) || input.toLowerCase() == 'quit' || input.toLowerCase() == 'exit');
-    //     }
-    // }
 }
 
 module.exports.TrainDialog = TrainDialog;

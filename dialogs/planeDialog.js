@@ -3,6 +3,8 @@
 
 const dateValidator = require("DateValidator").DateValidator;
 
+const pool = require('../database');
+
 const { CardFactory } = require('botbuilder');
 const {
     AttachmentPrompt,
@@ -49,7 +51,6 @@ class PlaneDialog extends CancelAndHelpDialog {
             this.toStep.bind(this),
             this.passengersStep.bind(this),
             this.dateStep.bind(this),
-            // this.planeType.bind(this),
             this.planeSelectStep.bind(this),
             this.confirmStep.bind(this),
             this.summaryStep.bind(this)
@@ -111,9 +112,19 @@ class PlaneDialog extends CancelAndHelpDialog {
     async planeSelectStep(step) {
         step.values.journeyDate = step.result;
 
-        //check availability and put the available planees in array using sql
+        const array = [];
         
-        const array = ['a', 'b'];
+        //checking availability of planes and providing the user with options
+        const query1 = `select * from plane where (from_city='${step.values.from}' and to_city='${step.values.to}') and (plane_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
+        const data = await pool.execute(query1);
+        for(let i=0; i<data[0].length; i++) {
+            const planeInfo = data[0][i].plane_name + " at " + data[0][i].plane_time;
+            array.push(planeInfo);
+        }
+        if (array.length <= 0) {
+            await step.context.sendActivity('Unfortunately no planes are available based on your requirements. Please try a different mode of transport or a different date.');
+            return await step.replaceDialog('root');
+        }
         return await step.prompt(CHOICE_PROMPT, {
             prompt: 'Select the plane and timing based on your preference',
             choices: ChoiceFactory.toChoices(array)
@@ -121,12 +132,15 @@ class PlaneDialog extends CancelAndHelpDialog {
     }
     
     async confirmStep(step) {
-        step.values.planeName = step.result.value;
+        step.values.planeName = step.result.value.split(' at ')[0];
+        step.values.time = step.result.value.split(' at ')[1];
         
-        //get values on the basis of user's choice
-        step.values.planeName = 'TATA plane'; //
-        step.values.planeNumber = 'OD1234';   //
-        step.values.time = '7:00 AM';         //
+        let query2 = `select plane_number, available_seats from plane where `;
+        query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+        query2 += `and (plane_name='${step.values.planeName}' and plane_date='${step.values.journeyDate}') and plane_time='${step.values.time}'`;
+        const data = await pool.execute(query2);
+        step.values.planeNumber = data[0][0].plane_number;
+        step.values.seats = data[0][0].available_seats;
 
         const plane = step.values;
 
@@ -143,18 +157,41 @@ class PlaneDialog extends CancelAndHelpDialog {
     async summaryStep(step) {
         if(step.result) {
 
-            //get the seat numbers and update in the database about booked seats on that date
+            //updating remaining seats in the database
+            const remainingSeats = step.values.seats - step.values.passengers;
+            let query3 = `update plane set available_seats=${remainingSeats} where `;
+            query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+            query3 += `and (plane_name='${step.values.planeName}' and plane_date='${step.values.journeyDate}') and plane_time='${step.values.time}'`;
+            await pool.execute(query3);
 
-            //insert the ticket info in ticket table
+            //getting the seat numbers
+            let seatNumbers = '';
+            for(let i=0; i<step.values.passengers; i++) {
+                if(i === step.values.passengers-1) {
+                    seatNumbers += step.values.seats;
+                }
+                else {
+                    seatNumbers += step.values.seats-- + ',';
+                }
+            }
 
-            //get the ticket id from ticket table
-            
             const plane = step.values;
-            plane.seats = '21,22.23';
-            plane.id = '1000';
+            plane.seats = seatNumbers;
+            
+            //inserting ticket info into database
+            let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
+            query4 += `values('${plane.from}', '${plane.to}', 'PLANE', '${plane.planeName}', '${plane.time}', '${plane.journeyDate}', '${plane.seats}')`
+            await pool.execute(query4);
+
+            //getting ticket id
+            let query5 = `select id from tickets where `;
+            query5 += `(from_city='${plane.from}' and to_city='${plane.to}') `;
+            query5 += `and (transport_mode='PLANE' and transport_name='${plane.planeName}') and (travel_time='${plane.time}' and travel_date='${plane.journeyDate}')`;
+            const data = await pool.execute(query5);
+            plane.id = data[0][0].id;
     
             //Returning Adaptive card of user info
-            planeCard.body[2].columns[1].items[0].text = plane.id;
+            planeCard.body[2].columns[1].items[0].text = plane.id.toString();
             planeCard.body[3].columns[1].items[0].text = plane.from;
             planeCard.body[4].columns[1].items[0].text = plane.to;
             planeCard.body[5].columns[1].items[0].text = plane.passengers.toString();
@@ -202,13 +239,6 @@ class PlaneDialog extends CancelAndHelpDialog {
         }
         return false;
     }
-
-    // async numberValidator(promptContext) {
-    //     if (promptContext.recognized.succeeded) {
-    //         const input = promptContext.recognized.value;
-    //         return (Number.isInteger(parseInt(input)) || input.toLowerCase() == 'quit' || input.toLowerCase() == 'exit');
-    //     }
-    // }
 }
 
 module.exports.PlaneDialog = PlaneDialog;
