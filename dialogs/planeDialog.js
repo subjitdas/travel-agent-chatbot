@@ -23,6 +23,7 @@ const { Channels } = require('botbuilder-core');
 const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 
 const planeCard = require('../resources/PlaneCard.json');
+const transportOptionsCard = require('../resources/TransportOptionsCard.json');
 
 const CHOICE_PROMPT = 'CHOICE_PROMPT';
 const CONFIRM_PROMPT = 'CONFIRM_PROMPT';
@@ -112,28 +113,38 @@ class PlaneDialog extends CancelAndHelpDialog {
     async planeSelectStep(step) {
         step.values.journeyDate = step.result;
 
-        const array = [];
-        
         //checking availability of planes and providing the user with options
         const query1 = `select * from plane where (from_city='${step.values.from}' and to_city='${step.values.to}') and (plane_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
         const data = await pool.execute(query1);
+        let found = false;
         for(let i=0; i<data[0].length; i++) {
+            found = true;
             const planeInfo = data[0][i].plane_name + " at " + data[0][i].plane_time;
-            array.push(planeInfo);
+            const planeItem = {
+                type: 'ActionSet',
+                actions: [
+                  {
+                    type: 'Action.Submit',
+                    title: planeInfo,
+                    data: planeInfo
+                  }
+                ]
+            };
+            transportOptionsCard.body.push(planeItem);
         }
-        if (array.length <= 0) {
+        if (!found) {
             await step.context.sendActivity('Unfortunately no planes are available based on your requirements. Please try a different mode of transport or a different date.');
             return await step.replaceDialog('root');
         }
-        return await step.prompt(CHOICE_PROMPT, {
-            prompt: 'Select the plane and timing based on your preference',
-            choices: ChoiceFactory.toChoices(array)
+        await step.context.sendActivity({
+            attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
         });
+        return ComponentDialog.EndOfTurn;
     }
     
     async confirmStep(step) {
-        step.values.planeName = step.result.value.split(' at ')[0];
-        step.values.time = step.result.value.split(' at ')[1];
+        step.values.planeName = step.context.activity.text.split(' at ')[0];
+        step.values.time = step.context.activity.text.split(' at ')[1];
         
         let query2 = `select plane_number, available_seats from plane where `;
         query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;

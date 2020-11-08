@@ -1,0 +1,13 @@
+{
+    "type": "AdaptiveCard",
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.2",
+    "body": [
+        {
+            "type": "TextBlock",
+            "text": "Select based on your preference:",
+            "wrap": true,
+            "horizontalAlignment": "Center"
+        }
+    ]
+}

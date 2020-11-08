@@ -92,21 +92,21 @@ class RootDialog extends CancelAndHelpDialog {
     async sendSuggestedActions() {
         const cardActions = [
             {
-                type: ActionTypes.PostBack,
+                type: ActionTypes.ImBack,
                 title: 'BUS',
                 value: 'BUS',
                 image: 'http://clipart-library.com/newhp/29-292350_bus-clip-art-png-clip-art-freeuse-library.png',
                 imageAltText: 'B'
             },
             {
-                type: ActionTypes.PostBack,
+                type: ActionTypes.ImBack,
                 title: 'TRAIN',
                 value: 'TRAIN',
                 image: 'http://clipart-library.com/images_k/train-clipart-transparent/train-clipart-transparent-11.png',
                 imageAltText: 'T'
             },
             {
-                type: ActionTypes.PostBack,
+                type: ActionTypes.ImBack,
                 title: 'PLANE',
                 value: 'PLANE',
                 image: 'http://clipart-library.com/img1/1523462.png',

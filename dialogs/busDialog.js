@@ -22,6 +22,7 @@ const {
 const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 
 const busCard = require('../resources/BusCard.json');
+const transportOptionsCard = require('../resources/TransportOptionsCard.json');
 const { defaultPipeName } = require("botbuilder/lib/streaming");
 
 const CHOICE_PROMPT = 'CHOICE_PROMPT';
@@ -107,29 +108,40 @@ class BusDialog extends CancelAndHelpDialog {
 
     async busSelectStep(step) {
         step.values.journeyDate = step.result;
-        
-        let array = [];
 
         //checking availability of buses and providing the user with options
         const query1 = `select * from bus where (from_city='${step.values.from}' and to_city='${step.values.to}') and (bus_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
         const data = await pool.execute(query1);
+        let found = false;
         for(let i=0; i<data[0].length; i++) {
+            found = true;
             const busInfo = data[0][i].bus_name + " at " + data[0][i].bus_time;
-            array.push(busInfo);
+            const busItem = {
+                type: 'ActionSet',
+                actions: [
+                  {
+                    type: 'Action.Submit',
+                    title: busInfo,
+                    data: busInfo
+                  }
+                ]
+            };
+            transportOptionsCard.body.push(busItem);
         }
-        if (array.length <= 0) {
+        if (!found) {
             await step.context.sendActivity('Unfortunately no buses are available based on your requirements. Please try a different mode of transport or a different date.');
             return await step.replaceDialog('root');
         }
-        return await step.prompt(CHOICE_PROMPT, {
-            prompt: 'Select the bus and timing based on your preference',
-            choices: ChoiceFactory.toChoices(array)
+
+        await step.context.sendActivity({
+            attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
         });
+        return ComponentDialog.EndOfTurn;
     }
     
     async confirmStep(step) {
-        step.values.busName = step.result.value.split(' at ')[0];
-        step.values.time = step.result.value.split(' at ')[1];
+        step.values.busName = step.context.activity.text.split(' at ')[0];
+        step.values.time = step.context.activity.text.split(' at ')[1];
         
         let query2 = `select bus_number, available_seats from bus where `;
         query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;

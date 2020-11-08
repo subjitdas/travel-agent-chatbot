@@ -23,6 +23,7 @@ const { Channels } = require('botbuilder-core');
 const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 
 const trainCard = require('../resources/TrainCard.json');
+const transportOptionsCard = require('../resources/TransportOptionsCard.json');
 
 const CHOICE_PROMPT = 'CHOICE_PROMPT';
 const CONFIRM_PROMPT = 'CONFIRM_PROMPT';
@@ -110,29 +111,39 @@ class TrainDialog extends CancelAndHelpDialog {
 
     async trainSelectStep(step) {
         step.values.journeyDate = step.result;
-        
-        const array = [];
 
         //checking availability of trains and providing the user with options
         const query1 = `select * from train where (from_city='${step.values.from}' and to_city='${step.values.to}') and (train_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
         const data = await pool.execute(query1);
+        let found = false;
         for(let i=0; i<data[0].length; i++) {
+            found = true;
             const trainInfo = data[0][i].train_name + " at " + data[0][i].train_time;
-            array.push(trainInfo);
+            const trainItem = {
+                type: 'ActionSet',
+                actions: [
+                  {
+                    type: 'Action.Submit',
+                    title: trainInfo,
+                    data: trainInfo
+                  }
+                ]
+            };
+            transportOptionsCard.body.push(trainItem);
         }
-        if (array.length <= 0) {
+        if (!found) {
             await step.context.sendActivity('Unfortunately no trains are available based on your requirements. Please try a different mode of transport or a different date.');
             return await step.replaceDialog('root');
         }
-        return await step.prompt(CHOICE_PROMPT, {
-            prompt: 'Select the train and timing based on your preference',
-            choices: ChoiceFactory.toChoices(array)
+        await step.context.sendActivity({
+            attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
         });
+        return ComponentDialog.EndOfTurn;
     }
     
     async confirmStep(step) {
-        step.values.trainName = step.result.value.split(' at ')[0];
-        step.values.time = step.result.value.split(' at ')[1];
+        step.values.trainName = step.context.activity.text.split(' at ')[0];
+        step.values.time = step.context.activity.text.split(' at ')[1];
         
         let query2 = `select coach_number, available_seats from train where `;
         query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
