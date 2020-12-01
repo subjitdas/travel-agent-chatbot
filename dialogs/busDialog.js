@@ -7,8 +7,6 @@ const pool = require('../database');
 
 const { CardFactory } = require('botbuilder');
 const {
-    AttachmentPrompt,
-    ChoiceFactory,
     ChoicePrompt,
     ComponentDialog,
     ConfirmPrompt,
@@ -23,7 +21,6 @@ const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 
 const busCard = require('../resources/BusCard.json');
 const transportOptionsCard = require('../resources/TransportOptionsCard.json');
-const { defaultPipeName } = require("botbuilder/lib/streaming");
 
 const CHOICE_PROMPT = 'CHOICE_PROMPT';
 const CONFIRM_PROMPT = 'CONFIRM_PROMPT';
@@ -76,149 +73,187 @@ class BusDialog extends CancelAndHelpDialog {
     }
 
     async fromStep(step) {
-        return await step.prompt(TEXT_PROMPT, 'Enter the name of the city from where you want to travel');
+        return await step.prompt(TEXT_PROMPT, 'Enter the departure location');
     }
 
     async toStep(step) {
-        step.values.from = step.result;
+        try{
+            const name = step.result;
+            const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+            step.values.from = nameCapitalized;
 
-        return await step.prompt(TEXT_PROMPT, {
-            prompt: 'Enter the name of the city you want to travel to'
-        });
+            return await step.prompt(TEXT_PROMPT, {
+                prompt: 'Enter the arrival location'
+            });
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
     
     async passengersStep(step) {
-        step.values.to = step.result;
-       
-        const promptOptions = { prompt: 'Enter the number of passengers'};
-        return await step.prompt(NUMBER_PROMPT, promptOptions);      
-
+        try{
+            const name = step.result;
+            const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+            step.values.to = nameCapitalized;
+        
+            const promptOptions = { prompt: 'Enter the number of passengers'};
+            return await step.prompt(NUMBER_PROMPT, promptOptions);      
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async dateStep(step) {
-        step.values.passengers = step.result;
-       
-        const promptOptions = { 
-            prompt: 'Enter the date of journey',
-            retryPrompt: `Please enter date in DD/MM/YYYY format and later than today's date that is ${ (new Date()).toLocaleDateString() }` 
-        };
-        return await step.prompt(DATE_PROMPT, promptOptions);     
-
+        try{
+            step.values.passengers = step.result;
+        
+            const promptOptions = { 
+                prompt: 'Enter the date of journey',
+                retryPrompt: `Please enter date in DD/MM/YYYY format and later than today's date that is ${ (new Date()).toLocaleDateString() }` 
+            };
+            return await step.prompt(DATE_PROMPT, promptOptions);     
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async busSelectStep(step) {
-        step.values.journeyDate = step.result;
+        try{
+            step.values.journeyDate = step.result;
 
-        //checking availability of buses and providing the user with options
-        const query1 = `select * from bus where (from_city='${step.values.from}' and to_city='${step.values.to}') and (bus_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
-        const data = await pool.execute(query1);
-        let found = false;
-        for(let i=0; i<data[0].length; i++) {
-            found = true;
-            const busInfo = data[0][i].bus_name + " at " + data[0][i].bus_time;
-            const busItem = {
-                type: 'ActionSet',
-                actions: [
-                  {
-                    type: 'Action.Submit',
-                    title: busInfo,
-                    data: busInfo
-                  }
-                ]
-            };
-            transportOptionsCard.body.push(busItem);
+            //checking availability of buses and providing the user with options
+            const query1 = `select * from bus where (from_city='${step.values.from}' and to_city='${step.values.to}') and (bus_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
+            const data = await pool.execute(query1);
+            let found = false;
+            for(let i=0; i<data[0].length; i++) {
+                found = true;
+                const busInfo = data[0][i].bus_name + " at " + data[0][i].bus_time;
+                const busItem = {
+                    type: 'ActionSet',
+                    actions: [
+                        {
+                            type: 'Action.Submit',
+                            title: busInfo,
+                            data: busInfo
+                        }
+                    ]
+                };
+                transportOptionsCard.body.push(busItem);
+            }
+            if (!found) {
+                await step.context.sendActivity('No buses are available based on your requirements. Please try a different mode of transport or a different date.');
+                return await step.replaceDialog('root');
+            }
+
+            await step.context.sendActivity({
+                attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
+            });
+            return ComponentDialog.EndOfTurn;
         }
-        if (!found) {
-            await step.context.sendActivity('Unfortunately no buses are available based on your requirements. Please try a different mode of transport or a different date.');
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
             return await step.replaceDialog('root');
         }
-
-        await step.context.sendActivity({
-            attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
-        });
-        return ComponentDialog.EndOfTurn;
     }
     
     async confirmStep(step) {
-        step.values.busName = step.context.activity.text.split(' at ')[0];
-        step.values.time = step.context.activity.text.split(' at ')[1];
-        
-        let query2 = `select bus_number, available_seats from bus where `;
-        query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
-        query2 += `and (bus_name='${step.values.busName}' and bus_date='${step.values.journeyDate}') and bus_time='${step.values.time}'`;
-        const data = await pool.execute(query2);
-        step.values.busNumber = data[0][0].bus_number;
-        step.values.seats = data[0][0].available_seats;
-        
-        const bus = step.values;
+        try{
+            step.values.busName = step.context.activity.text.split(' at ')[0];
+            step.values.time = step.context.activity.text.split(' at ')[1];
+            
+            let query2 = `select bus_number, available_seats from bus where `;
+            query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+            query2 += `and (bus_name='${step.values.busName}' and bus_date='${step.values.journeyDate}') and bus_time='${step.values.time}'`;
+            const data = await pool.execute(query2);
+            step.values.busNumber = data[0][0].bus_number;
+            step.values.seats = data[0][0].available_seats;
+            
+            const bus = step.values;
 
-        let msg = `your starting location is ${ bus.from }`;
-        msg += `, your destination is ${bus.to}`;
-        msg += `, number of passenger(s) is/are ${ bus.passengers }`;
-        msg += `, date of journey is ${ bus.journeyDate}`
-        msg += ` and the bus you have chosen is ${ bus.busName } at ${bus.time}.`;
-        await step.context.sendActivity(msg);
+            let msg = `Departure location: ${ bus.from }\r\n`;
+            msg += `Arrival location: ${bus.to}\r\n`;
+            msg += `Number of passenger(s): ${ bus.passengers }\r\n`;
+            msg += `Date of journey: ${ bus.journeyDate}\r\n`
+            msg += `Bus: ${ bus.busName }\r\n`;
+            msg += `Time: ${bus.time}`
+            await step.context.sendActivity(msg);
 
-        return await step.prompt(CONFIRM_PROMPT, 'Do you wish to book ticket?', ['yes', 'no']);
+            return await step.prompt(CONFIRM_PROMPT, 'Do you wish to book your ticket?', ['yes', 'no']);
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async summaryStep(step) {
-        if(step.result) {
+        try{
+            if(step.result) {
 
-            //updating remaining seats in the database
-            const remainingSeats = step.values.seats - step.values.passengers;
-            let query3 = `update bus set available_seats=${remainingSeats} where `;
-            query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
-            query3 += `and (bus_name='${step.values.busName}' and bus_date='${step.values.journeyDate}') and bus_time='${step.values.time}'`;
-            await pool.execute(query3);
+                //updating remaining seats in the database
+                const remainingSeats = step.values.seats - step.values.passengers;
+                let query3 = `update bus set available_seats=${remainingSeats} where `;
+                query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+                query3 += `and (bus_name='${step.values.busName}' and bus_date='${step.values.journeyDate}') and bus_time='${step.values.time}'`;
+                await pool.execute(query3);
 
-            //getting the seat numbers
-            let seatNumbers = '';
-            for(let i=0; i<step.values.passengers; i++) {
-                if(i === step.values.passengers-1) {
-                    seatNumbers += step.values.seats;
+                //getting the seat numbers
+                let seatNumbers = '';
+                for(let i=0; i<step.values.passengers; i++) {
+                    if(i === step.values.passengers-1) {
+                        seatNumbers += step.values.seats;
+                    }
+                    else {
+                        seatNumbers += step.values.seats-- + ',';
+                    }
                 }
-                else {
-                    seatNumbers += step.values.seats-- + ',';
-                }
+
+                const bus = step.values;
+                bus.seats = seatNumbers;
+                
+                //inserting ticket info into database
+                let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
+                query4 += `values('${bus.from}', '${bus.to}', 'BUS', '${bus.busName}', '${bus.time}', '${bus.journeyDate}', '${bus.seats}')`
+                await pool.execute(query4);
+
+                //getting ticket id
+                let query5 = `select id from tickets where `;
+                query5 += `(from_city='${bus.from}' and to_city='${bus.to}') `;
+                query5 += `and (transport_mode='BUS' and transport_name='${bus.busName}') and (travel_time='${bus.time}' and travel_date='${bus.journeyDate}')`;
+                const data = await pool.execute(query5);
+                bus.id = data[0][0].id;
+
+                //Returning Adaptive card of user info
+                busCard.body[2].columns[1].items[0].text = bus.id.toString();
+                busCard.body[3].columns[1].items[0].text = bus.from;
+                busCard.body[4].columns[1].items[0].text = bus.to;
+                busCard.body[5].columns[1].items[0].text = bus.passengers.toString();
+                busCard.body[6].columns[1].items[0].text = bus.journeyDate;
+                busCard.body[7].columns[1].items[0].text = bus.time;
+                busCard.body[8].columns[1].items[0].text = bus.seats;
+                busCard.body[9].columns[1].items[0].text = bus.busName;
+                busCard.body[10].columns[1].items[0].text = bus.busNumber;
+        
+                await step.context.sendActivity({
+                    text: 'Here is your Ticket:',
+                    attachments: [CardFactory.adaptiveCard(busCard)]
+                });
+                // WaterfallStep always finishes with the end of the Waterfall or with another dialog; here it is the end.
+                return await step.endDialog();
             }
-
-            const bus = step.values;
-            bus.seats = seatNumbers;
-            
-            //inserting ticket info into database
-            let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
-            query4 += `values('${bus.from}', '${bus.to}', 'BUS', '${bus.busName}', '${bus.time}', '${bus.journeyDate}', '${bus.seats}')`
-            await pool.execute(query4);
-
-            //getting ticket id
-            let query5 = `select id from tickets where `;
-            query5 += `(from_city='${bus.from}' and to_city='${bus.to}') `;
-            query5 += `and (transport_mode='BUS' and transport_name='${bus.busName}') and (travel_time='${bus.time}' and travel_date='${bus.journeyDate}')`;
-            const data = await pool.execute(query5);
-            bus.id = data[0][0].id;
-
-            //Returning Adaptive card of user info
-            busCard.body[2].columns[1].items[0].text = bus.id.toString();
-            busCard.body[3].columns[1].items[0].text = bus.from;
-            busCard.body[4].columns[1].items[0].text = bus.to;
-            busCard.body[5].columns[1].items[0].text = bus.passengers.toString();
-            busCard.body[6].columns[1].items[0].text = bus.journeyDate;
-            busCard.body[7].columns[1].items[0].text = bus.time;
-            busCard.body[8].columns[1].items[0].text = bus.seats;
-            busCard.body[9].columns[1].items[0].text = bus.busName;
-            busCard.body[10].columns[1].items[0].text = bus.busNumber;
-    
-            await step.context.sendActivity({
-                text: 'Here is your Ticket:',
-                attachments: [CardFactory.adaptiveCard(busCard)]
-            });
-            await step.context.sendActivity('Type anything to book more tickets.');    
-            // WaterfallStep always finishes with the end of the Waterfall or with another dialog; here it is the end.
+            await step.context.sendActivity('You did not confirm booking. Type anything to continue.');
             return await step.endDialog();
         }
-        await step.context.sendActivity('You did not confirm booking. Type anything to continue.');
-        return await step.endDialog();
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async journeyDateValidator(promptContext) {

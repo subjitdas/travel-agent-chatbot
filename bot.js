@@ -41,15 +41,18 @@ class DialogBot extends ActivityHandler {
                 // bot was added to the conversation, and the opposite indicates this is a user.
                 if (context.activity.membersAdded[idx].id !== context.activity.recipient.id) {
                     await context.sendActivity(`Welcome I will be your personal travel agent.`);
-                    await context.sendActivity(`You can book tickets to travel from one place to another within the country using your preferred mode of transportaion.`);
-                    await context.sendActivity(`Please type anything to continue :)`);
+                    await context.sendActivity(`You can book tickets to travel from one place to another within the country using your preferred mode of transportation.`);
+                    // await context.sendActivity(`Please type anything to continue`);
+                    await this.dialog.run(context, this.dialogState);
+
+                    await next();
                 }
             }
 
             // By calling next() you ensure that the next BotHandler is run.
             await next();
         });
-        
+
     }
 
     /**

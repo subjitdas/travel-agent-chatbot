@@ -5,22 +5,16 @@ const { MessageFactory } = require('botbuilder');
 const { ActionTypes } = require('botframework-schema');
 
 const {
-    ChoiceFactory,
     ComponentDialog,
     DialogSet,
     DialogTurnStatus,
-    NumberPrompt,
-    TextPrompt,
-    WaterfallDialog,
-    ChoicePrompt
+    WaterfallDialog
 } = require('botbuilder-dialogs');
 
 const { BusDialog } = require('./busDialog');
 const { TrainDialog } = require('./trainDialog');
 const { PlaneDialog } = require('./planeDialog');
 const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
-
-const CHOICE_PROMPT = 'CHOICE_PROMPT';
 
 class RootDialog extends CancelAndHelpDialog {
     /**
@@ -59,6 +53,7 @@ class RootDialog extends CancelAndHelpDialog {
         
         const dialogContext = await dialogSet.createContext(context);
         const results = await dialogContext.continueDialog();
+        console.log(results.status);
         if (results.status === DialogTurnStatus.empty) {
             await dialogContext.beginDialog(this.id);
         }
@@ -94,27 +89,27 @@ class RootDialog extends CancelAndHelpDialog {
             {
                 type: ActionTypes.ImBack,
                 title: 'BUS',
-                value: 'BUS',
+                value: 'Bus',
                 image: 'http://clipart-library.com/newhp/29-292350_bus-clip-art-png-clip-art-freeuse-library.png',
                 imageAltText: 'B'
             },
             {
                 type: ActionTypes.ImBack,
                 title: 'TRAIN',
-                value: 'TRAIN',
+                value: 'Train',
                 image: 'http://clipart-library.com/images_k/train-clipart-transparent/train-clipart-transparent-11.png',
                 imageAltText: 'T'
             },
             {
                 type: ActionTypes.ImBack,
                 title: 'PLANE',
-                value: 'PLANE',
+                value: 'Plane',
                 image: 'http://clipart-library.com/img1/1523462.png',
-                imageAltText: 'Trip'
+                imageAltText: 'P'
             }
         ];
 
-        let reply = MessageFactory.suggestedActions(cardActions, 'Please select your preferred mode of transformation:');
+        let reply = MessageFactory.suggestedActions(cardActions, 'Please select your preferred mode of transportation:');
         return reply;
     }
 }

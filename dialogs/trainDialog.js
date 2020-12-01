@@ -7,8 +7,6 @@ const pool = require('../database');
 
 const { CardFactory } = require('botbuilder');
 const {
-    AttachmentPrompt,
-    ChoiceFactory,
     ChoicePrompt,
     ComponentDialog,
     ConfirmPrompt,
@@ -18,7 +16,6 @@ const {
     TextPrompt,
     WaterfallDialog
 } = require('botbuilder-dialogs');
-const { Channels } = require('botbuilder-core');
 
 const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 
@@ -31,7 +28,6 @@ const TEXT_PROMPT = 'TEXT_PROMPT';
 const NUMBER_PROMPT = 'NUMBER_PROMPT';
 const DATE_PROMPT = 'DATE_PROMPT';
 const TRAIN_TICKET_INFO = 'TRAIN_TICKET_INFO';
-// const SPECIAL_NUMBER_PROMPT = 'SPECIAL_NUMBER_PROMPT';
 const WATERFALL_DIALOG = 'WATERFALL_DIALOG';
 
 class TrainDialog extends CancelAndHelpDialog {
@@ -45,7 +41,6 @@ class TrainDialog extends CancelAndHelpDialog {
         this.addDialog(new ChoicePrompt(CHOICE_PROMPT));
         this.addDialog(new ConfirmPrompt(CONFIRM_PROMPT));
         this.addDialog(new NumberPrompt(NUMBER_PROMPT));
-        // this.addDialog(new TextPrompt(SPECIAL_NUMBER_PROMPT, this.numberValidator));
 
         this.addDialog(new WaterfallDialog(WATERFALL_DIALOG, [
             this.fromStep.bind(this),
@@ -78,149 +73,182 @@ class TrainDialog extends CancelAndHelpDialog {
     }
 
     async fromStep(step) {
-        return await step.prompt(TEXT_PROMPT, 'Enter the name of the city from where you want to travel');
+        return await step.prompt(TEXT_PROMPT, 'Enter the departure location');
     }
 
     async toStep(step) {
-        step.values.from = step.result;
-
+        const name = step.result;
+        const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+        step.values.from = nameCapitalized;
+        
         return await step.prompt(TEXT_PROMPT, {
-            prompt: 'Enter the name of the city you want to travel to'
+            prompt: 'Enter the arrival location'
         });
     }
     
     async passengersStep(step) {
-        step.values.to = step.result;
-       
-        //add date validator ahead from today's date
-        const promptOptions = { prompt: 'Enter the number of passengers'};
-        return await step.prompt(NUMBER_PROMPT, promptOptions);      
-
+        try{    
+            const name = step.result;
+            const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+            step.values.to = nameCapitalized;
+        
+            //add date validator ahead from today's date
+            const promptOptions = { prompt: 'Enter the number of passengers'};
+            return await step.prompt(NUMBER_PROMPT, promptOptions);      
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async dateStep(step) {
-        step.values.passengers = step.result;
-       
-        //add date validator ahead from today's date
-        const promptOptions = { 
-            prompt: 'Enter the date of journey',
-            retryPrompt: `Please enter date in DD/MM/YYYY format and later than today's date that is ${ (new Date()).toLocaleDateString() }` 
-        };
-        return await step.prompt(DATE_PROMPT, promptOptions);
+        try{
+            step.values.passengers = step.result;
+        
+            //add date validator ahead from today's date
+            const promptOptions = { 
+                prompt: 'Enter the date of journey',
+                retryPrompt: `Please enter date in DD/MM/YYYY format and later than today's date that is ${ (new Date()).toLocaleDateString() }` 
+            };
+            return await step.prompt(DATE_PROMPT, promptOptions);
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async trainSelectStep(step) {
-        step.values.journeyDate = step.result;
+        try{
+            step.values.journeyDate = step.result;
 
-        //checking availability of trains and providing the user with options
-        const query1 = `select * from train where (from_city='${step.values.from}' and to_city='${step.values.to}') and (train_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
-        const data = await pool.execute(query1);
-        let found = false;
-        for(let i=0; i<data[0].length; i++) {
-            found = true;
-            const trainInfo = data[0][i].train_name + " at " + data[0][i].train_time;
-            const trainItem = {
-                type: 'ActionSet',
-                actions: [
-                  {
-                    type: 'Action.Submit',
-                    title: trainInfo,
-                    data: trainInfo
-                  }
-                ]
-            };
-            transportOptionsCard.body.push(trainItem);
+            //checking availability of trains and providing the user with options
+            const query1 = `select * from train where (from_city='${step.values.from}' and to_city='${step.values.to}') and (train_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
+            const data = await pool.execute(query1);
+            let found = false;
+            for(let i=0; i<data[0].length; i++) {
+                found = true;
+                const trainInfo = data[0][i].train_name + " at " + data[0][i].train_time;
+                const trainItem = {
+                    type: 'ActionSet',
+                    actions: [
+                    {
+                        type: 'Action.Submit',
+                        title: trainInfo,
+                        data: trainInfo
+                    }
+                    ]
+                };
+                transportOptionsCard.body.push(trainItem);
+            }
+            if (!found) {
+                await step.context.sendActivity('No trains are available based on your requirements. Please try a different mode of transport or a different date.');
+                return await step.replaceDialog('root');
+            }
+            await step.context.sendActivity({
+                attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
+            });
+            return ComponentDialog.EndOfTurn;
         }
-        if (!found) {
-            await step.context.sendActivity('Unfortunately no trains are available based on your requirements. Please try a different mode of transport or a different date.');
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
             return await step.replaceDialog('root');
         }
-        await step.context.sendActivity({
-            attachments: [CardFactory.adaptiveCard(transportOptionsCard)]
-        });
-        return ComponentDialog.EndOfTurn;
     }
     
     async confirmStep(step) {
-        step.values.trainName = step.context.activity.text.split(' at ')[0];
-        step.values.time = step.context.activity.text.split(' at ')[1];
-        
-        let query2 = `select coach_number, available_seats from train where `;
-        query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
-        query2 += `and (train_name='${step.values.trainName}' and train_date='${step.values.journeyDate}') and train_time='${step.values.time}'`;
-        const data = await pool.execute(query2);
-        step.values.trainNumber = data[0][0].coach_number;
-        step.values.seats = data[0][0].available_seats;
+        try{    
+            step.values.trainName = step.context.activity.text.split(' at ')[0];
+            step.values.time = step.context.activity.text.split(' at ')[1];
+            
+            let query2 = `select coach_number, available_seats from train where `;
+            query2 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+            query2 += `and (train_name='${step.values.trainName}' and train_date='${step.values.journeyDate}') and train_time='${step.values.time}'`;
+            const data = await pool.execute(query2);
+            step.values.trainNumber = data[0][0].coach_number;
+            step.values.seats = data[0][0].available_seats;
 
-        const train = step.values;
+            const train = step.values;
 
-        let msg = `your starting location is ${ train.from }`;
-        msg += `, your destination is ${train.to}`;
-        msg += `, number of passenger(s) is/are ${ train.passengers }`;
-        msg += `, date of journey is ${ train.journeyDate}`
-        msg += ` and the train you have chosen is ${ train.trainName } at ${train.time}.`;
-        await step.context.sendActivity(msg);
+            let msg = `Departure location: ${ train.from }\r\n`;
+            msg += `Arrival loction: ${train.to}\r\n`;
+            msg += `Number of passenger(s): ${ train.passengers }\r\n`;
+            msg += `Date of journey: ${ train.journeyDate}\r\n`
+            msg += `Train ${ train.trainName }`;
+            msg += `Time: ${train.time}`;
+            await step.context.sendActivity(msg);
 
-        return await step.prompt(CONFIRM_PROMPT, 'Do you wish to book ticket?', ['yes', 'no']);
+            return await step.prompt(CONFIRM_PROMPT, 'Do you wish to book ticket?', ['yes', 'no']);
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async summaryStep(step) {
-        if(step.result) {
+        try{
+            if(step.result) {
 
-            //updating remaining seats in the database
-            const remainingSeats = step.values.seats - step.values.passengers;
-            let query3 = `update train set available_seats=${remainingSeats} where `;
-            query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
-            query3 += `and (train_name='${step.values.trainName}' and train_date='${step.values.journeyDate}') and train_time='${step.values.time}'`;
-            await pool.execute(query3);
+                //updating remaining seats in the database
+                const remainingSeats = step.values.seats - step.values.passengers;
+                let query3 = `update train set available_seats=${remainingSeats} where `;
+                query3 += `(from_city='${step.values.from}' and to_city='${step.values.to}') `;
+                query3 += `and (train_name='${step.values.trainName}' and train_date='${step.values.journeyDate}') and train_time='${step.values.time}'`;
+                await pool.execute(query3);
 
-            //getting the seat numbers
-            let seatNumbers = '';
-            for(let i=0; i<step.values.passengers; i++) {
-                if(i === step.values.passengers-1) {
-                    seatNumbers += step.values.seats;
+                //getting the seat numbers
+                let seatNumbers = '';
+                for(let i=0; i<step.values.passengers; i++) {
+                    if(i === step.values.passengers-1) {
+                        seatNumbers += step.values.seats;
+                    }
+                    else {
+                        seatNumbers += step.values.seats-- + ',';
+                    }
                 }
-                else {
-                    seatNumbers += step.values.seats-- + ',';
-                }
+
+                const train = step.values;
+                train.seats = seatNumbers;
+                
+                //inserting ticket info into database
+                let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
+                query4 += `values('${train.from}', '${train.to}', 'TRAIN', '${train.trainName}', '${train.time}', '${train.journeyDate}', '${train.seats}')`
+                await pool.execute(query4);
+
+                //getting ticket id
+                let query5 = `select id from tickets where `;
+                query5 += `(from_city='${train.from}' and to_city='${train.to}') `;
+                query5 += `and (transport_mode='TRAIN' and transport_name='${train.trainName}') and (travel_time='${train.time}' and travel_date='${train.journeyDate}')`;
+                const data = await pool.execute(query5);
+                train.id = data[0][0].id;
+        
+                //Returning Adaptive card of user info
+                trainCard.body[2].columns[1].items[0].text = train.id.toString();
+                trainCard.body[3].columns[1].items[0].text = train.from;
+                trainCard.body[4].columns[1].items[0].text = train.to;
+                trainCard.body[5].columns[1].items[0].text = train.passengers.toString();
+                trainCard.body[6].columns[1].items[0].text = train.journeyDate;
+                trainCard.body[7].columns[1].items[0].text = train.time;
+                trainCard.body[8].columns[1].items[0].text = train.seats;
+                trainCard.body[9].columns[1].items[0].text = train.trainName;
+                trainCard.body[10].columns[1].items[0].text = train.trainNumber;
+        
+                await step.context.sendActivity({
+                    text: 'Here is your Ticket:',
+                    attachments: [CardFactory.adaptiveCard(trainCard)]
+                });
+                // WaterfallStep always finishes with the end of the Waterfall or with another dialog; here it is the end.
+                return await step.endDialog();
             }
-
-            const train = step.values;
-            train.seats = seatNumbers;
-            
-            //inserting ticket info into database
-            let query4 = `insert into tickets(from_city, to_city, transport_mode, transport_name, travel_time, travel_date, seat_numbers) `;
-            query4 += `values('${train.from}', '${train.to}', 'TRAIN', '${train.trainName}', '${train.time}', '${train.journeyDate}', '${train.seats}')`
-            await pool.execute(query4);
-
-            //getting ticket id
-            let query5 = `select id from tickets where `;
-            query5 += `(from_city='${train.from}' and to_city='${train.to}') `;
-            query5 += `and (transport_mode='TRAIN' and transport_name='${train.trainName}') and (travel_time='${train.time}' and travel_date='${train.journeyDate}')`;
-            const data = await pool.execute(query5);
-            train.id = data[0][0].id;
-    
-            //Returning Adaptive card of user info
-            trainCard.body[2].columns[1].items[0].text = train.id.toString();
-            trainCard.body[3].columns[1].items[0].text = train.from;
-            trainCard.body[4].columns[1].items[0].text = train.to;
-            trainCard.body[5].columns[1].items[0].text = train.passengers.toString();
-            trainCard.body[6].columns[1].items[0].text = train.journeyDate;
-            trainCard.body[7].columns[1].items[0].text = train.time;
-            trainCard.body[8].columns[1].items[0].text = train.seats;
-            trainCard.body[9].columns[1].items[0].text = train.trainName;
-            trainCard.body[10].columns[1].items[0].text = train.trainNumber;
-    
-            await step.context.sendActivity({
-                text: 'Here is your Ticket:',
-                attachments: [CardFactory.adaptiveCard(trainCard)]
-            });
-            await step.context.sendActivity('Type anything to book more tickets.');
-            // WaterfallStep always finishes with the end of the Waterfall or with another dialog; here it is the end.
+            await step.context.sendActivity('You did not confirm booking. Type anything to continue.');
             return await step.endDialog();
         }
-        await step.context.sendActivity('You did not confirm booking. Type anything to continue.');
-        return await step.endDialog();
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async journeyDateValidator(promptContext) {
