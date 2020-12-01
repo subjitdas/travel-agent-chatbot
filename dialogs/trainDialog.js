@@ -126,6 +126,9 @@ class TrainDialog extends CancelAndHelpDialog {
             //checking availability of trains and providing the user with options
             const query1 = `select * from train where (from_city='${step.values.from}' and to_city='${step.values.to}') and (train_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
             const data = await pool.execute(query1);
+            while(transportOptionsCard.body.length > 1) {
+                transportOptionsCard.body.pop();
+            }
             let found = false;
             for(let i=0; i<data[0].length; i++) {
                 found = true;
@@ -175,7 +178,7 @@ class TrainDialog extends CancelAndHelpDialog {
             msg += `Arrival loction: ${train.to}\r\n`;
             msg += `Number of passenger(s): ${ train.passengers }\r\n`;
             msg += `Date of journey: ${ train.journeyDate}\r\n`
-            msg += `Train ${ train.trainName }`;
+            msg += `Train: ${ train.trainName }\r\n`;
             msg += `Time: ${train.time}`;
             await step.context.sendActivity(msg);
 
@@ -220,7 +223,8 @@ class TrainDialog extends CancelAndHelpDialog {
                 //getting ticket id
                 let query5 = `select id from tickets where `;
                 query5 += `(from_city='${train.from}' and to_city='${train.to}') `;
-                query5 += `and (transport_mode='TRAIN' and transport_name='${train.trainName}') and (travel_time='${train.time}' and travel_date='${train.journeyDate}')`;
+                query5 += `and (transport_mode='TRAIN' and transport_name='${train.trainName}') and (travel_time='${train.time}' and travel_date='${train.journeyDate}')` ;
+                query5 += `and seat_numbers='${train.seats}'`
                 const data = await pool.execute(query5);
                 train.id = data[0][0].id;
         
@@ -242,8 +246,8 @@ class TrainDialog extends CancelAndHelpDialog {
                 // WaterfallStep always finishes with the end of the Waterfall or with another dialog; here it is the end.
                 return await step.endDialog();
             }
-            await step.context.sendActivity('You did not confirm booking. Type anything to continue.');
-            return await step.endDialog();
+            await step.context.sendActivity('You did not confirm booking.');
+            return await step.replaceDialog('root');
         }
         catch(err) {
             await step.context.sendActivity('Server side error! Please try again or come back later.');
