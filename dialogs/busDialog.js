@@ -7,11 +7,8 @@ const pool = require('../database');
 
 const { CardFactory } = require('botbuilder');
 const {
-    ChoicePrompt,
     ComponentDialog,
     ConfirmPrompt,
-    DialogSet,
-    DialogTurnStatus,
     NumberPrompt,
     TextPrompt,
     WaterfallDialog
@@ -22,9 +19,9 @@ const { CancelAndHelpDialog } = require('./cancelAndHelpDialog');
 const busCard = require('../resources/BusCard.json');
 const transportOptionsCard = require('../resources/TransportOptionsCard.json');
 
-const CHOICE_PROMPT = 'CHOICE_PROMPT';
 const CONFIRM_PROMPT = 'CONFIRM_PROMPT';
-const TEXT_PROMPT = 'TEXT_PROMPT';
+const DEPARTURE_PROMPT = 'DEPARTURE_PROMPT';
+const ARRIVAL_PROMPT = 'ARRIVAL_PROMPT';
 const NUMBER_PROMPT = 'NUMBER_PROMPT';
 const DATE_PROMPT = 'DATE_PROMPT';
 const BUS_TICKET_INFO = 'BUS_TICKET_INFO';
@@ -36,9 +33,9 @@ class BusDialog extends CancelAndHelpDialog {
 
         this.bus = userState.createProperty(BUS_TICKET_INFO);
 
-        this.addDialog(new TextPrompt(TEXT_PROMPT));
+        this.addDialog(new TextPrompt(DEPARTURE_PROMPT, this.fromLocationValidator));
+        this.addDialog(new TextPrompt(ARRIVAL_PROMPT, this.toLocationValidator));
         this.addDialog(new TextPrompt(DATE_PROMPT, this.journeyDateValidator));
-        this.addDialog(new ChoicePrompt(CHOICE_PROMPT));
         this.addDialog(new ConfirmPrompt(CONFIRM_PROMPT));
         this.addDialog(new NumberPrompt(NUMBER_PROMPT));
 
@@ -56,7 +53,10 @@ class BusDialog extends CancelAndHelpDialog {
     }
 
     async fromStep(step) {
-        return await step.prompt(TEXT_PROMPT, 'Enter the departure location');
+        return await step.prompt(DEPARTURE_PROMPT, {
+            prompt: 'Enter the departure location',
+            retryPrompt: 'Please enter a valid location'
+        });
     }
 
     async toStep(step) {
@@ -65,8 +65,9 @@ class BusDialog extends CancelAndHelpDialog {
             const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
             step.values.from = nameCapitalized;
 
-            return await step.prompt(TEXT_PROMPT, {
-                prompt: 'Enter the arrival location'
+            return await step.prompt(ARRIVAL_PROMPT, {
+                prompt: 'Enter the arrival location',
+                retryPrompt: 'Please enter a valid location'
             });
         }
         catch(err) {
@@ -108,7 +109,23 @@ class BusDialog extends CancelAndHelpDialog {
 
     async busSelectStep(step) {
         try{
-            step.values.journeyDate = step.result;
+            let validDate = '';
+            let dateInp = step.result.split('/');
+            if(dateInp[0].length < 2) {
+                dateInp[0] = '0' + dateInp[0];
+            }
+            if(dateInp[1].length < 2) {
+                dateInp[1] = '0' + dateInp[1];
+            }
+            for(let i=0; i<dateInp.length; i++) {
+                if(i === dateInp.length-1) {
+                    validDate += dateInp[i];
+                }
+                else {
+                    validDate += dateInp[i] + '/';
+                }
+            }
+            step.values.journeyDate = validDate;
 
             //checking availability of buses and providing the user with options
             const query1 = `select * from bus where (from_city='${step.values.from}' and to_city='${step.values.to}') and (bus_date='${step.values.journeyDate}' and available_seats >= ${step.values.passengers});`;
@@ -241,6 +258,36 @@ class BusDialog extends CancelAndHelpDialog {
             await step.context.sendActivity('Server side error! Please try again or come back later.');
             return await step.replaceDialog('root');
         }
+    }
+
+    async fromLocationValidator(promptContext) {
+        if(promptContext.recognized.succeeded) {
+            let input = promptContext.recognized.value;
+            input = input.charAt(0).toUpperCase() + input.slice(1).toLowerCase();
+            const query = `select distinct from_city from bus`;
+            const result = await pool.execute(query);
+            for(let i=0; i<result[0].length; i++) {
+                if(input === result[0][i].from_city) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    async toLocationValidator(promptContext) {
+        if(promptContext.recognized.succeeded) {
+            let input = promptContext.recognized.value;
+            input = input.charAt(0).toUpperCase() + input.slice(1).toLowerCase();
+            const query = `select distinct to_city from bus`;
+            const result = await pool.execute(query);
+            for(let i=0; i<result[0].length; i++) {
+                if(input === result[0][i].to_city) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     async journeyDateValidator(promptContext) {
