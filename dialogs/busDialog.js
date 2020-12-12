@@ -53,14 +53,28 @@ class BusDialog extends CancelAndHelpDialog {
     }
 
     async fromStep(step) {
-        return await step.prompt(DEPARTURE_PROMPT, {
-            prompt: 'Enter the departure location',
-            retryPrompt: 'Please enter a valid location'
-        });
+        try{
+            if(step.options.from) {
+                step.values.from = step.options.from;
+                return step.next();
+            }
+            return await step.prompt(DEPARTURE_PROMPT, {
+                prompt: 'Enter the departure location',
+                retryPrompt: 'Please enter a valid location'
+            });
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async toStep(step) {
         try{
+            if(step.options.to) {
+                step.values.to = step.options.to;
+                return step.next();
+            }
             const name = step.result;
             const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
             step.values.from = nameCapitalized;
@@ -78,6 +92,10 @@ class BusDialog extends CancelAndHelpDialog {
     
     async passengersStep(step) {
         try{
+            if(step.options.passengers) {
+                step.values.passengers = step.options.passengers;
+                return step.next();
+            }
             const name = step.result;
             const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
             step.values.to = nameCapitalized;
@@ -93,6 +111,10 @@ class BusDialog extends CancelAndHelpDialog {
 
     async dateStep(step) {
         try{
+            if(step.options.journeyDate) {
+                step.values.journeyDate = step.options.journeyDate;
+                return step.next(step.values.journeyDate);
+            }
             step.values.passengers = step.result;
         
             const promptOptions = { 
@@ -133,10 +155,12 @@ class BusDialog extends CancelAndHelpDialog {
             while(transportOptionsCard.body.length > 1) {
                 transportOptionsCard.body.pop();
             }
+            step.values.availableBuses = [];
             let found = false;
             for(let i=0; i<data[0].length; i++) {
                 found = true;
                 const busInfo = data[0][i].bus_name + " at " + data[0][i].bus_time;
+                step.values.availableBuses.push(busInfo);
                 const busItem = {
                     type: 'ActionSet',
                     actions: [
@@ -167,6 +191,10 @@ class BusDialog extends CancelAndHelpDialog {
     
     async confirmStep(step) {
         try{
+            if(!step.values.availableBuses.includes(step.context.activity.text)) {
+                step.context.sendActivity('Please select one of the provided options');
+                return await step.replaceDialog('bus', step.values);
+            }
             step.values.busName = step.context.activity.text.split(' at ')[0];
             step.values.time = step.context.activity.text.split(' at ')[1];
             
@@ -295,7 +323,7 @@ class BusDialog extends CancelAndHelpDialog {
         if(promptContext.recognized.succeeded) {
             let date = promptContext.recognized.value.split("/");
             let todayDate = (new Date()).toLocaleDateString().split("/");
-            if(date.length <= 1) {
+            if(date.length != 3) {
                 return false;
             }
             if(date[2].toString().length === 4) {

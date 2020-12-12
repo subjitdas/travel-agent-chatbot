@@ -53,14 +53,28 @@ class PlaneDialog extends CancelAndHelpDialog {
     }
 
     async fromStep(step) {
-        return await step.prompt(DEPARTURE_PROMPT, {
-            prompt: 'Enter the departure location',
-            retryPrompt: 'Please enter a valid location'
-        });
+        try{
+            if(step.options.from) {
+                step.values.from = step.options.from;
+                return step.next();
+            }
+            return await step.prompt(DEPARTURE_PROMPT, {
+                prompt: 'Enter the departure location',
+                retryPrompt: 'Please enter a valid location'
+            });
+        }
+        catch(err) {
+            await step.context.sendActivity('Server side error! Please try again or come back later.');
+            return await step.replaceDialog('root');
+        }
     }
 
     async toStep(step) {
-        try{    
+        try{
+            if(step.options.to) {
+                step.values.to = step.options.to;
+                return step.next();
+            }
             const name = step.result;
             const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
             step.values.from = nameCapitalized;
@@ -77,12 +91,15 @@ class PlaneDialog extends CancelAndHelpDialog {
     }
     
     async passengersStep(step) {
-        try{    
+        try{
+            if(step.options.passengers) {
+                step.values.passengers = step.options.passengers;
+                return step.next();
+            }
             const name = step.result;
             const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
             step.values.to = nameCapitalized;
-        
-            //add date validator ahead from today's date
+
             const promptOptions = { prompt: 'Enter the number of passengers'};
             return await step.prompt(NUMBER_PROMPT, promptOptions);      
         }
@@ -93,7 +110,11 @@ class PlaneDialog extends CancelAndHelpDialog {
     }
 
     async dateStep(step) {
-        try{    
+        try{
+            if(step.options.journeyDate) {
+                step.values.journeyDate = step.options.journeyDate;
+                return step.next(step.values.journeyDate);
+            }
             step.values.passengers = step.result;
         
             //add date validator ahead from today's date
@@ -135,10 +156,12 @@ class PlaneDialog extends CancelAndHelpDialog {
             while(transportOptionsCard.body.length > 1) {
                 transportOptionsCard.body.pop();
             }
+            step.values.availablePlanes = [];
             let found = false;
             for(let i=0; i<data[0].length; i++) {
                 found = true;
                 const planeInfo = data[0][i].plane_name + " at " + data[0][i].plane_time;
+                step.values.availablePlanes.push(planeInfo);
                 const planeItem = {
                     type: 'ActionSet',
                     actions: [
@@ -167,7 +190,11 @@ class PlaneDialog extends CancelAndHelpDialog {
     }
     
     async confirmStep(step) {
-        try{    
+        try{
+            if(!step.values.availablePlanes.includes(step.context.activity.text)) {
+                step.context.sendActivity('Please select one of the provided options');
+                return await step.replaceDialog('plane', step.values);
+            }
             step.values.planeName = step.context.activity.text.split(' at ')[0];
             step.values.time = step.context.activity.text.split(' at ')[1];
             
@@ -296,7 +323,7 @@ class PlaneDialog extends CancelAndHelpDialog {
         if(promptContext.recognized.succeeded) {
             let date = promptContext.recognized.value.split("/");
             let todayDate = (new Date()).toLocaleDateString().split("/");
-            if(date.length <= 1) {
+            if(date.length != 3) {
                 return false;
             }
             if(date[2].toString().length === 4) {
