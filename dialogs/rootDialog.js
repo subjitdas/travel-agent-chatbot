@@ -36,7 +36,8 @@ class RootDialog extends CancelAndHelpDialog {
         // and then collect and display the results.
         this.addDialog(new WaterfallDialog('root', [
             this.chooseAction.bind(this),
-            this.startDialog.bind(this)
+            this.startDialog.bind(this),
+            this.endOfConversation.bind(this)
         ]));
 
         this.initialDialogId = 'root';
@@ -82,6 +83,11 @@ class RootDialog extends CancelAndHelpDialog {
         else {
             return await step.replaceDialog('root');
         }
+    }
+
+    async endOfConversation(step) {
+        await step.context.sendActivity('Thank you for using our services');
+        return await step.endDialog();
     }
 
     async sendSuggestedActions() {
