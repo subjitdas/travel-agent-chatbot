@@ -37,7 +37,7 @@ class BusDialog extends CancelAndHelpDialog {
         this.addDialog(new TextPrompt(ARRIVAL_PROMPT, this.toLocationValidator));
         this.addDialog(new TextPrompt(DATE_PROMPT, this.journeyDateValidator));
         this.addDialog(new ConfirmPrompt(CONFIRM_PROMPT));
-        this.addDialog(new NumberPrompt(NUMBER_PROMPT));
+        this.addDialog(new NumberPrompt(NUMBER_PROMPT, this.passengersValidator));
 
         this.addDialog(new WaterfallDialog(WATERFALL_DIALOG, [
             this.fromStep.bind(this),
@@ -100,7 +100,7 @@ class BusDialog extends CancelAndHelpDialog {
             const nameCapitalized = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
             step.values.to = nameCapitalized;
         
-            const promptOptions = { prompt: 'Enter the number of passengers'};
+            const promptOptions = { prompt: 'Enter the number of passengers', retryPrompt: 'Please enter a valid number of passengers'};
             return await step.prompt(NUMBER_PROMPT, promptOptions);      
         }
         catch(err) {
@@ -314,6 +314,14 @@ class BusDialog extends CancelAndHelpDialog {
                     return true;
                 }
             }
+        }
+        return false;
+    }
+
+    async passengersValidator(promptContext) {
+        if(promptContext.recognized.succeeded) {
+            const n = promptContext.recognized.value;
+            return (n >= 1) && (Math.floor(n) === n);
         }
         return false;
     }
